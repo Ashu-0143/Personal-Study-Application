@@ -1,0 +1,6 @@
+{
+  "name": "Study Echo",
+  "description": "An AI-powered academic study companion helping students understand, revised, and retain semester subjects.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
