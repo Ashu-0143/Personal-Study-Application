@@ -51,6 +51,27 @@ data class StudyQuizQuestion(val question: String, val options: List<String>, va
 object GeminiClient {
     private const val TAG = "GeminiClient"
 
+    @Volatile
+    var isHighMemoryEnhancedMode: Boolean = false
+
+    // Bounded thread-safe LRU cache generator to prevent infinite RAM memory growth during long study workloads
+    private fun <K, V> createBoundedCache(): MutableMap<K, V> {
+        val map = object : LinkedHashMap<K, V>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: Map.Entry<K, V>?): Boolean {
+                val limit = if (isHighMemoryEnhancedMode) 100 else 15
+                return size > limit
+            }
+        }
+        return java.util.Collections.synchronizedMap(map)
+    }
+
+    private val teachCache = createBoundedCache<String, String>()
+    private val flashcardCache = createBoundedCache<String, List<TempFlashcard>>()
+    private val quizCache = createBoundedCache<String, List<StudyQuizQuestion>>()
+    private val prepCache = createBoundedCache<String, String>()
+    private val roadmapCache = createBoundedCache<String, List<TempTopic>>()
+    private val executePromptCache = createBoundedCache<String, String>()
+
     // Retrieve API key. Securely check for placeholders
     private fun getApiKey(): String {
         val key = BuildConfig.GEMINI_API_KEY
@@ -60,6 +81,13 @@ object GeminiClient {
     val isApiKeyAvailable: Boolean get() = getApiKey().isNotEmpty()
 
     suspend fun executePrompt(prompt: String, systemInstruction: String? = null): String {
+        // Cache based on hash code of inputs to avoid giant keys in memory
+        val cacheKey = "prompt:${prompt.hashCode()}|sys:${systemInstruction?.hashCode()}"
+        executePromptCache[cacheKey]?.let {
+            Log.d(TAG, "Serving cached prompt execution for hash key: $cacheKey")
+            return it
+        }
+
         val apiKey = getApiKey()
         if (apiKey.isEmpty()) {
             throw IllegalStateException("Gemini API key is not configured. Please add your key in the Secrets panel.")
@@ -71,23 +99,34 @@ object GeminiClient {
         )
 
         val response = RetrofitClient.service.generateContent(apiKey, request)
-        return response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+        val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
             ?: throw IllegalStateException("Received empty response from study model.")
+            
+        executePromptCache[cacheKey] = text
+        return text
     }
 
     /**
      * Parses syllabus text or outlines to generate structured topics
      */
     suspend fun generateLearningRoadmap(subjectName: String, materialsText: String): List<TempTopic> {
+        val cacheKey = "$subjectName|$materialsText"
+        roadmapCache[cacheKey]?.let {
+            Log.d(TAG, "Serving cached syllabus roadmap for: $subjectName")
+            return it
+        }
+
         if (!isApiKeyAvailable) {
             // Return rich educational mock content under normal demo expectations
-            return listOf(
+            val fallback = listOf(
                 TempTopic("Introduction to $subjectName & Core Principles", 1),
                 TempTopic("Fundamental Concepts, Theories, and Frameworks", 2),
                 TempTopic("Intermediate Analysis, Logic Modeling, and Equations", 3),
                 TempTopic("Advanced Troubleshooting, Systems Engineering, and Real-World Application", 4),
                 TempTopic("Exam Review: Synthesized Problems, Analytical Reviews, and Solutions", 5)
             )
+            roadmapCache[cacheKey] = fallback
+            return fallback
         }
 
         val prompt = """
@@ -103,20 +142,24 @@ object GeminiClient {
 
         return try {
             val response = executePrompt(prompt, "You are an intelligent syllabus and academic roadmap analyzer.")
-            response.lines()
+            val topicsResult = response.lines()
                 .filter { it.isNotBlank() }
                 .mapIndexed { index, line ->
                     val cleaned = line.replace(Regex("^Topic\\s+\\d+:\\s*"), "").trim()
                     TempTopic(cleaned, index + 1)
                 }
                 .filter { it.name.length > 3 }
+            roadmapCache[cacheKey] = topicsResult
+            topicsResult
         } catch (e: Exception) {
             Log.e(TAG, "Error generating syllabus details: ${e.message}", e)
-            listOf(
+            val recoveryFallback = listOf(
                 TempTopic("Foundational Essentials of $subjectName", 1),
                 TempTopic("Advanced Application Paradigms", 2),
                 TempTopic("Exam Prep: Synthesizing Concepts", 3)
             )
+            roadmapCache[cacheKey] = recoveryFallback
+            recoveryFallback
         }
     }
 
@@ -124,8 +167,14 @@ object GeminiClient {
      * Patient personal tutor mode teaching topics in study modes.
      */
     suspend fun teachConcept(topicName: String, mode: String, subjectName: String): String {
+        val cacheKey = "$subjectName|$topicName|${mode.lowercase()}"
+        teachCache[cacheKey]?.let {
+            Log.d(TAG, "Serving cached explanation for: $cacheKey")
+            return it
+        }
+
         if (!isApiKeyAvailable) {
-            return """
+            val fallback = """
                 📚 [DEMO MODE - GEMINI KEY NOT SET]
                 
                 Here is a customized layout explanation of "$topicName" ($subjectName) in **$mode Mode**:
@@ -143,6 +192,8 @@ object GeminiClient {
                 
                 *(Configure your actual Gemini API Key in the AI Studio Secrets Panel to experience full generative AI mentoring.)*
             """.trimIndent()
+            teachCache[cacheKey] = fallback
+            return fallback
         }
 
         val systemInstruction = """
@@ -153,15 +204,22 @@ object GeminiClient {
 
         val prompt = when (mode.lowercase()) {
             "simple explanation" -> "Explain '$topicName' (from the subject '$subjectName') using beginner-friendly language, simplified steps, and simple everyday analogies."
-            "detailed explanation" -> "Provide an in-depth, rigorous, comprehensive scholarly breakdown of '$topicName' ($subjectName) including specifications, mathematical formulations (if applicable), structural variables, and detailed processes."
-            "exam-focused explanation" -> "Provide an exam-oriented study of '$topicName' ($subjectName). Highlight the typical questions examiners ask, critical scoring keywords, diagrams schemas, and bulleted concepts to memorize."
-            "quick revision explanation" -> "Provide a dense, lightning-fast synthesis of '$topicName' ($subjectName) to read right before walking into an exam. Use high-concept summaries, tables, and short definitions."
-            "real-world analogy explanation" -> "Explain '$topicName' ($subjectName) entirely using one extended, beautifully constructed, real-world metaphor or story that makes the abstract concepts concrete."
+            "beginner-friendly teaching" -> "Explain '$topicName' ($subjectName) using zero jargon, styled around a captivating story or journey with very short paragraphs."
+            "detailed concept teaching" -> "Provide an in-depth, rigorous, scholarly breakdown of '$topicName' ($subjectName) including specifications, equations, and exhaustive logical architectures."
+            "exam-oriented teaching" -> "Provide an exam-oriented study of '$topicName' ($subjectName). Highlight the typical questions examiners ask, critical scoring keywords, diagrams schemas, and bulleted concepts to memorize."
+            "quick revision mode" -> "Provide a dense, lightning-fast synthesis of '$topicName' ($subjectName) to read right before walking into an exam. Use high-concept summaries, tables, and short definitions."
+            "real-world analogy mode" -> "Explain '$topicName' ($subjectName) entirely using one extended, beautifully constructed, real-world metaphor or story that makes the abstract concepts concrete."
+            "step-by-step breakdown mode" -> "Perform a systematic deconstruction of '$topicName' ($subjectName) using incremental logical steps. Specify the Input, Process, and Output details for each step."
+            "concept reinforcement mode" -> "Prioritize diagnostic reinforcement for '$topicName' ($subjectName). Explain common cognitive misconceptions, debug common students' logic loops, and give proper workflows."
+            "last-minute exam preparation mode" -> "Compile a high-impact, low-stress final sprint cheat sheet for '$topicName' ($subjectName) containing core formulas and facts plus a calming performance tip."
+            "active recall teaching mode" -> "Teach '$topicName' ($subjectName) through Socratic questioning. Present 3-4 progressive questions prompting study retrieval accompanied by hidden markdown hints."
             else -> "Define and teach the academic concept '$topicName' ($subjectName) clearly and structure it for effective study."
         }
 
         return try {
-            executePrompt(prompt, systemInstruction)
+            val response = executePrompt(prompt, systemInstruction)
+            teachCache[cacheKey] = response
+            response
         } catch (e: Exception) {
             "Error rendering session: ${e.localizedMessage}. Please ensure your Gemini Key is verified."
         }
@@ -171,12 +229,20 @@ object GeminiClient {
      * Generate flashcards based on subject details or topic
      */
     suspend fun generateFlashcards(topicName: String, mode: String = "general"): List<TempFlashcard> {
+        val cacheKey = "$topicName|$mode"
+        flashcardCache[cacheKey]?.let {
+            Log.d(TAG, "Serving cached flashcards for: $cacheKey")
+            return it
+        }
+
         if (!isApiKeyAvailable) {
-            return listOf(
+            val fallback = listOf(
                 TempFlashcard("What is the primary objective of studying $topicName?", "To establish foundational mastery and link adjacent syllabus subjects."),
                 TempFlashcard("What is a common real-world analogy associated with $topicName?", "An engine processing fuel cycle structures."),
                 TempFlashcard("Name 3 core columns or properties that define $topicName.", "Execution speed, logical clarity, and modular structural boundaries.")
             )
+            flashcardCache[cacheKey] = fallback
+            return fallback
         }
 
         val prompt = """
@@ -207,12 +273,15 @@ object GeminiClient {
             if (cards.isEmpty()) {
                 throw IllegalStateException("Failed parser layout")
             }
+            flashcardCache[cacheKey] = cards
             cards
         } catch (e: Exception) {
-            listOf(
+            val recoveryFallback = listOf(
                 TempFlashcard("Recall: Core Concept of $topicName", "Review the key details generated in your tutoring logs."),
                 TempFlashcard("Application: Real-world scope of $topicName", "Used in solving critical operational parameters.")
             )
+            flashcardCache[cacheKey] = recoveryFallback
+            recoveryFallback
         }
     }
 
@@ -220,8 +289,14 @@ object GeminiClient {
      * Generate a study quiz
      */
     suspend fun generateQuiz(topicName: String, subjectName: String): List<StudyQuizQuestion> {
+        val cacheKey = "$subjectName|$topicName"
+        quizCache[cacheKey]?.let {
+            Log.d(TAG, "Serving cached quiz for: $cacheKey")
+            return it
+        }
+
         if (!isApiKeyAvailable) {
-            return listOf(
+            val fallback = listOf(
                 StudyQuizQuestion(
                     "Which statement best describes the fundamental purpose of $topicName?",
                     listOf("To increase performance overhead", "To organize complex syllabus concepts in clear schemas", "To minimize exam preparation speed"),
@@ -235,6 +310,8 @@ object GeminiClient {
                     "Consistent active recall cycles yield optimal long-term memory."
                 )
             )
+            quizCache[cacheKey] = fallback
+            return fallback
         }
 
         val prompt = """
@@ -280,9 +357,10 @@ object GeminiClient {
                 }
             }
             if (questions.isEmpty()) throw IllegalStateException("Empty parsed questions list")
+            quizCache[cacheKey] = questions
             questions
         } catch (e: Exception) {
-            listOf(
+            val recoveryFallback = listOf(
                 StudyQuizQuestion(
                     "Quiz validation question for $topicName?",
                     listOf("Concept Option A", "Concept Option B", "Concept Option C"),
@@ -290,6 +368,8 @@ object GeminiClient {
                     "This test question validates connection reliability."
                 )
             )
+            quizCache[cacheKey] = recoveryFallback
+            recoveryFallback
         }
     }
 
@@ -297,8 +377,14 @@ object GeminiClient {
      * Last-minute formula/important questions condensed study sheet
      */
     suspend fun generateCondensedExamPrep(subjectName: String, topicsList: List<String>): String {
+        val cacheKey = "$subjectName|${topicsList.sorted().joinToString(",")}"
+        prepCache[cacheKey]?.let {
+            Log.d(TAG, "Serving cached exam prep sheet for: $cacheKey")
+            return it
+        }
+
         if (!isApiKeyAvailable) {
-            return """
+            val fallback = """
                 🔥 [DEMO MODE - GEMINI KEY NOT SET PREP SHEET]
                 
                 ## Last-Minute Study Guide: $subjectName
@@ -316,6 +402,8 @@ object GeminiClient {
                 - Recall is twice as powerful as passing reading processes.
                 - Review your generated flashcards immediately before exam entrance!
             """.trimIndent()
+            prepCache[cacheKey] = fallback
+            return fallback
         }
 
         val prompt = """
@@ -333,7 +421,9 @@ object GeminiClient {
         """.trimIndent()
 
         return try {
-            executePrompt(prompt, "You are a top-tier professor specialized in exam prep condensation.")
+            val response = executePrompt(prompt, "You are a top-tier professor specialized in exam prep condensation.")
+            prepCache[cacheKey] = response
+            response
         } catch (e: Exception) {
             "Error rendering Condensed Study Guide: ${e.localizedMessage}"
         }
@@ -355,11 +445,20 @@ object GeminiClient {
             """.trimIndent()
         }
         val systemInstruction = "You are 'Study Echo', a helpful, specialized academic mentor clarifying concept details."
+        
+        // Smart context trimming to optimize token payloads and minimize memory consumption during long sessions
+        val limit = if (isHighMemoryEnhancedMode) 15000 else 3000
+        val trimmedContext = if (currentContext.length > limit) {
+            currentContext.substring(0, limit) + "\n\n...[context trimmed for token/memory efficiency]..."
+        } else {
+            currentContext
+        }
+
         val prompt = """
             We are in an active study session for the topic '$topicName' under the subject '$subjectName'.
             This is the core tutoring document we are analyzing together:
             ---
-            $currentContext
+            $trimmedContext
             ---
 
             The student has asked this specific follow-up question or clarification:

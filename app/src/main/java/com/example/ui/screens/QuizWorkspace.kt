@@ -81,7 +81,7 @@ fun QuizWorkspaceScreen(viewModel: StudyViewModel) {
             }
         } else {
             val totalQuestions = quiz!!.size
-            val activeQuestion = quiz!![currentQuestionIdx]
+            val activeQuestion = quiz!!.getOrElse(currentQuestionIdx) { quiz!!.last() }
 
             // Progress bar
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

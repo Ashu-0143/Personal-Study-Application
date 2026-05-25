@@ -132,12 +132,20 @@ object DocumentIntelligencePipeline {
             return@withContext generateFallbackStructure(fileName, subjectName)
         }
 
+        // Apply a smart limit to incoming text to prevent memory spikes and ensure fast processing on 2GB RAM devices
+        val textLimit = if (GeminiClient.isHighMemoryEnhancedMode) 35000 else 8000
+        val processedTxt = if (fileContentSimulatedText.length > textLimit) {
+            fileContentSimulatedText.substring(0, textLimit) + "\n\n...[content trimmed by pipeline for memory optimization and processing stability]..."
+        } else {
+            fileContentSimulatedText
+        }
+
         val prompt = """
             You are a state-of-the-art Document Intelligence engine specializing in collegiate academic structures.
             We have uploaded a file: name "$fileName" of type "$fileType" for our subject "$subjectName".
             The raw text text extractor outputs this content:
             ---
-            $fileContentSimulatedText
+            $processedTxt
             ---
 
             Analyze this carefully. Intelligently structure the syllabus or materials into a structured, connected course-node schema. 
@@ -337,28 +345,37 @@ object TeachingPromptOrchestrator {
 
             $activeHistoryBlock
 
-            Based on the tutor response mode keyword "$mode", format your instruction according to the following guidelines:
+            Based on the tutor response mode keyword "$mode", format your instruction exactly according to the following guidelines:
 
-            1. DEEP CONCEPTUAL TEACHING:
-               - Exhaustive academic guide, detailed system blueprints, formulas, and historical research rationale.
+            1. Simple Explanation:
+               - Explain the topic using beginner-friendly language, simplified incremental steps, and simple everyday analogies.
                
-            2. QUICK REVISION EXPLANATIONS:
-               - Condensed tables, immediate key terms, high-impact bulleted summaries. Perfect for rapid mental scanning.
+            2. Beginner-Friendly Teaching:
+               - Use zero academic jargon. Frame the entire explanation using a fun cohesive story or interactive journey, divided into brief readable paragraphs.
                
-            3. EXAM-FOCUSED SUMMARIZATION:
-               - Focus heavily on likely exam Prompts, grade-saving checklists, precise keywords required by examiners, and scoring guidelines cards.
-
-            4. ACTIVE RECALL QUESTION GENERATION:
-               - Generate 3-4 progressive open-ended Socratic questions that force students to mentally retrieve information. Provide small hint drawers.
-
-            5. WEAK-TOPIC REINFORCEMENT:
-               - (Note: Student has a weak score on this topic). Prioritize diagnosing confusion triggers. Deconstruct typical misunderstandings, explain the topic using two totally different creative everyday metaphors, and provide immediate remediation steps.
-
-            6. BEGINNER-FRIENDLY TEACHING:
-               - Use zero academic jargon. Frame the whole explanation using a single cohesive fun story. Break elements into bite-sized paragraphs.
-
-            7. LAST-MINUTE PREPARATION GUIDANCE:
-               - High-intensity, low-stress outline. Mention the "must-remember" principles, formula cheat sheets, and a calming performance state tip.
+            3. Detailed Concept Teaching:
+               - Exhaustive academic guide, technical system blueprints, mathematical/logical formulas, and deep research context.
+               
+            4. Exam-Oriented Teaching:
+               - Highlight likely exam prompts, examiner grading criteria, critical keywords to score points, and strategic study takeaways.
+               
+            5. Quick Revision Mode:
+               - Highly condensed. Use comparison tables, bold high-concept terms, and short bullet summaries designed for immediate scan.
+               
+            6. Real-World Analogy Mode:
+               - Restructure the theme completely around a grand, illustrative, beautifully constructed real-world metaphor.
+               
+            7. Step-by-Step Breakdown Mode:
+               - Segment elements systematically into sequential, structured steps, detailing the Inputs, Processes, and Outputs for each step.
+               
+            8. Concept Reinforcement Mode:
+               - Identify and deconstruct typical misunderstandings, conceptual pitfalls, and bugs students experience with this topic, followed by corrections.
+               
+            9. Last-Minute Exam Preparation Mode:
+               - Provide a stress-reducing high-yield cheat sheet lists essential facts and formulas to memorize, plus a calming exam performance tip.
+               
+            10. Active Recall Teaching Mode:
+               - Frame explanation around a Socratic dialogue. Present 3-4 progressive questions that test understanding with hidden markdown details/hints.
 
             Please craft an elite, beautifully styled Markdown answer that exceeds usual expectations for this subject.
         """.trimIndent()

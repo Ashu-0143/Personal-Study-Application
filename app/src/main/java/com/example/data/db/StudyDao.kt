@@ -55,6 +55,14 @@ interface StudyDao {
     @Query("SELECT * FROM topics WHERE subjectId = :subjectId ORDER BY orderIndex ASC")
     suspend fun getTopicsForSubjectSync(subjectId: Int): List<Topic>
 
+    @Query("""
+        SELECT topics.* FROM topics 
+        INNER JOIN subjects ON topics.subjectId = subjects.id 
+        WHERE subjects.semesterId = :semesterId 
+        ORDER BY topics.orderIndex ASC
+    """)
+    suspend fun getAllTopicsForSemesterSync(semesterId: Int): List<Topic>
+
     @Query("SELECT * FROM topics ORDER BY lastStudied DESC LIMIT 20")
     fun getRecentTopics(): Flow<List<Topic>>
 

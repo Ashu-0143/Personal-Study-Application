@@ -112,7 +112,7 @@ fun FlashcardWorkspaceScreen(viewModel: StudyViewModel) {
             }
         } else {
             val total = flashcards.size
-            val card = flashcards[currentCardIdx]
+            val card = flashcards.getOrElse(currentCardIdx) { flashcards.last() }
 
             // Progress Indicators
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

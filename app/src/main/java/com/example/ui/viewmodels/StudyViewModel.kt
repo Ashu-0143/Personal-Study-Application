@@ -106,6 +106,17 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedExplanationMode = MutableStateFlow("Simple Explanation")
     val selectedExplanationMode: StateFlow<String> = _selectedExplanationMode.asStateFlow()
 
+    // High Memory Enhanced Mode config
+    private val _highMemoryMode = MutableStateFlow(false)
+    val highMemoryMode: StateFlow<Boolean> = _highMemoryMode.asStateFlow()
+
+    fun toggleHighMemoryMode() {
+        val nextVal = !_highMemoryMode.value
+        _highMemoryMode.value = nextVal
+        GeminiClient.isHighMemoryEnhancedMode = nextVal
+        Log.d("StudyViewModel", "Toggled Performance Mode: highMemoryMode = $nextVal")
+    }
+
     // Local state for active tutoring panel notes & history
     private val _explanationHistory = MutableStateFlow<List<Pair<String, String>>>(emptyList())
     val explanationHistory: StateFlow<List<Pair<String, String>>> = _explanationHistory.asStateFlow()
@@ -312,15 +323,22 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         ) { subs, sem, due, weak ->
             if (sem == null) emptyList()
             else {
-                val allTopics = subs.flatMap { repository.getTopicsForSubjectSync(it.id) }
-                val remainingDaysToExam = maxOf(1, TimeUnit.MILLISECONDS.toDays(sem.examDate - System.currentTimeMillis()).toInt())
-                AiStudyInsightsEngine.generateIntelligentStudyInsights(
-                    subjects = subs,
-                    allTopics = allTopics,
-                    dueTopics = due,
-                    weakTopics = weak,
-                    targetExamDays = remainingDaysToExam
-                )
+                try {
+                    withContext(Dispatchers.IO) {
+                        val allTopics = repository.getAllTopicsForSemesterSync(sem.id)
+                        val remainingDaysToExam = maxOf(1, TimeUnit.MILLISECONDS.toDays(sem.examDate - System.currentTimeMillis()).toInt())
+                        AiStudyInsightsEngine.generateIntelligentStudyInsights(
+                            subjects = subs,
+                            allTopics = allTopics,
+                            dueTopics = due,
+                            weakTopics = weak,
+                            targetExamDays = remainingDaysToExam
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.e("StudyViewModel", "Error calculating reactive AI insights", e)
+                    emptyList()
+                }
             }
         }.stateIn(
             scope = viewModelScope,
@@ -336,14 +354,21 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         ) { subs, sem, due, weak ->
             if (sem == null) emptyList()
             else {
-                val allTopics = subs.flatMap { repository.getTopicsForSubjectSync(it.id) }
-                val remainingDaysToExam = maxOf(1, TimeUnit.MILLISECONDS.toDays(sem.examDate - System.currentTimeMillis()).toInt())
-                SemanticRecommendationEngine.computeSemanticRecommendations(
-                    topics = allTopics,
-                    dueList = due,
-                    weakList = weak,
-                    examDays = remainingDaysToExam
-                )
+                try {
+                    withContext(Dispatchers.IO) {
+                        val allTopics = repository.getAllTopicsForSemesterSync(sem.id)
+                        val remainingDaysToExam = maxOf(1, TimeUnit.MILLISECONDS.toDays(sem.examDate - System.currentTimeMillis()).toInt())
+                        SemanticRecommendationEngine.computeSemanticRecommendations(
+                            topics = allTopics,
+                            dueList = due,
+                            weakList = weak,
+                            examDays = remainingDaysToExam
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.e("StudyViewModel", "Error calculating reactive semantic recommendations", e)
+                    emptyList()
+                }
             }
         }.stateIn(
             scope = viewModelScope,
@@ -609,44 +634,44 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             
             _selectedSubject.value?.let { subject ->
                 try {
-                    val parsedStructure = DocumentIntelligencePipeline.analyzeDocumentStructure(
-                        fileName = fileName,
-                        fileType = fileType,
-                        fileContentSimulatedText = simulatedFileText,
-                        subjectName = subject.name
-                    )
-                    
-                    val chaptersSummary = StringBuilder()
-                    chaptersSummary.append("Title: ${parsedStructure.title}\n")
-                    chaptersSummary.append("Objectives: ${parsedStructure.description}\n\n")
-                    for (unit in parsedStructure.units) {
-                        chaptersSummary.append("Unit: ${unit.name} (Complexity: ${unit.complexLevel})\n")
-                        for (ch in unit.chapters) {
-                            chaptersSummary.append("- ${ch.title} (Time: ${ch.suggestedStudyMinutes} min)\n")
-                            if (ch.coreConcepts.isNotEmpty()) {
-                                chaptersSummary.append("  Concepts: ${ch.coreConcepts.joinToString(", ")}\n")
-                            }
-                            if (ch.essentialFormulae.isNotEmpty()) {
-                                chaptersSummary.append("  Formulae: ${ch.essentialFormulae.joinToString(", ")}\n")
-                            }
-                        }
-                    }
-                    if (parsedStructure.learningPathDependencies.isNotEmpty()) {
-                        chaptersSummary.append("\nPrerequisites:\n")
-                        for (dep in parsedStructure.learningPathDependencies) {
-                            chaptersSummary.append("- ${dep.topicName} requires ${dep.requiresPrerequisiteTopic} (${dep.dependencyStrength})\n")
-                        }
-                    }
-                    
-                    val newFile = UploadedFile(
-                        subjectId = subjectId,
-                        name = fileName,
-                        fileType = fileType,
-                        fileSize = fileSize,
-                        extractedChaptersText = chaptersSummary.toString()
-                    )
-                    
                     withContext(Dispatchers.IO) {
+                        val parsedStructure = DocumentIntelligencePipeline.analyzeDocumentStructure(
+                            fileName = fileName,
+                            fileType = fileType,
+                            fileContentSimulatedText = simulatedFileText,
+                            subjectName = subject.name
+                        )
+                        
+                        val chaptersSummary = StringBuilder()
+                        chaptersSummary.append("Title: ${parsedStructure.title}\n")
+                        chaptersSummary.append("Objectives: ${parsedStructure.description}\n\n")
+                        for (unit in parsedStructure.units) {
+                            chaptersSummary.append("Unit: ${unit.name} (Complexity: ${unit.complexLevel})\n")
+                            for (ch in unit.chapters) {
+                                chaptersSummary.append("- ${ch.title} (Time: ${ch.suggestedStudyMinutes} min)\n")
+                                if (ch.coreConcepts.isNotEmpty()) {
+                                    chaptersSummary.append("  Concepts: ${ch.coreConcepts.joinToString(", ")}\n")
+                                }
+                                if (ch.essentialFormulae.isNotEmpty()) {
+                                    chaptersSummary.append("  Formulae: ${ch.essentialFormulae.joinToString(", ")}\n")
+                                }
+                            }
+                        }
+                        if (parsedStructure.learningPathDependencies.isNotEmpty()) {
+                            chaptersSummary.append("\nPrerequisites:\n")
+                            for (dep in parsedStructure.learningPathDependencies) {
+                                chaptersSummary.append("- ${dep.topicName} requires ${dep.requiresPrerequisiteTopic} (${dep.dependencyStrength})\n")
+                            }
+                        }
+                        
+                        val newFile = UploadedFile(
+                            subjectId = subjectId,
+                            name = fileName,
+                            fileType = fileType,
+                            fileSize = fileSize,
+                            extractedChaptersText = chaptersSummary.toString()
+                        )
+                        
                         repository.insertUploadedFile(newFile)
                         
                         val dbTopics = mutableListOf<Topic>()
@@ -798,7 +823,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 val now = System.currentTimeMillis()
                 val examDays = _selectedSemester.value?.let { maxOf(1, TimeUnit.MILLISECONDS.toDays(it.examDate - now).toInt()) } ?: 30
                 val allSubs = repository.getSubjectsForSemesterSync(subject.semesterId)
-                val allTopics = allSubs.flatMap { repository.getTopicsForSubjectSync(it.id) }
+                val allTopics = repository.getAllTopicsForSemesterSync(subject.semesterId)
                 val due = allTopics.filter { it.nextRevisionDate <= now }
                 val weak = allTopics.filter { it.weakScore > 0.6f }
                 
@@ -957,6 +982,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
+            val allTopics = repository.getAllTopicsForSemesterSync(semester.id)
+            val topicsMap = allTopics.groupBy { it.subjectId }
+
             var bestRecommendedTopic: Topic? = null
             var bestSub: Subject? = null
             var highestPriorityScore = -1f
@@ -966,7 +994,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             val remainingDaysToExam = maxOf(1, TimeUnit.MILLISECONDS.toDays(semester.examDate - now).toInt())
 
             for (sub in allSubs) {
-                val subTopics = repository.getTopicsForSubjectSync(sub.id)
+                val subTopics = topicsMap[sub.id] ?: emptyList()
                 val subDiffMultiplier = when (sub.difficulty.lowercase()) {
                     "hard" -> 3.0f
                     "medium" -> 2.0f

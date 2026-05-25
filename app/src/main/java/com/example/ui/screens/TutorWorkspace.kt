@@ -448,10 +448,15 @@ fun TutorWorkspaceScreen(viewModel: StudyViewModel) {
             ) {
                 val modes = listOf(
                     "Simple Explanation",
-                    "Detailed Explanation",
-                    "Exam-focused Explanation",
-                    "Quick Revision Explanation",
-                    "Real-world Analogy Explanation"
+                    "Beginner-Friendly Teaching",
+                    "Detailed Concept Teaching",
+                    "Exam-Oriented Teaching",
+                    "Quick Revision Mode",
+                    "Real-World Analogy Mode",
+                    "Step-by-Step Breakdown Mode",
+                    "Concept Reinforcement Mode",
+                    "Last-Minute Exam Preparation Mode",
+                    "Active Recall Teaching Mode"
                 )
                 modes.forEach { m ->
                     Tab(
@@ -973,10 +978,15 @@ fun FormattedRichText(text: String, modifier: Modifier = Modifier) {
 private fun getTabIdx(mode: String): Int {
     return when (mode.lowercase()) {
         "simple explanation" -> 0
-        "detailed explanation" -> 1
-        "exam-focused explanation" -> 2
-        "quick revision explanation" -> 3
-        "real-world analogy explanation" -> 4
+        "beginner-friendly teaching" -> 1
+        "detailed concept teaching" -> 2
+        "exam-oriented teaching" -> 3
+        "quick revision mode" -> 4
+        "real-world analogy mode" -> 5
+        "step-by-step breakdown mode" -> 6
+        "concept reinforcement mode" -> 7
+        "last-minute exam preparation mode" -> 8
+        "active recall teaching mode" -> 9
         else -> 0
     }
 }

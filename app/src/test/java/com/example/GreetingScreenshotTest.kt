@@ -30,4 +30,17 @@ class GreetingScreenshotTest {
 
     composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/greeting.png")
   }
+
+  @Test
+  fun app_startup_screenshot() {
+    val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.app.Application>()
+    val viewModel = com.example.ui.viewmodels.StudyViewModel(app)
+    composeTestRule.setContent {
+      MyApplicationTheme {
+        com.example.ui.screens.MainStudyDashboard(viewModel = viewModel)
+      }
+    }
+    composeTestRule.waitForIdle()
+    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/app_startup.png")
+  }
 }

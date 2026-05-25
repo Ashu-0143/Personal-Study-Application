@@ -30,6 +30,7 @@ class StudyRepository(private val studyDao: StudyDao) {
     // --- Topics ---
     fun getTopicsForSubject(subjectId: Int): Flow<List<Topic>> = studyDao.getTopicsForSubject(subjectId)
     suspend fun getTopicsForSubjectSync(subjectId: Int): List<Topic> = studyDao.getTopicsForSubjectSync(subjectId)
+    suspend fun getAllTopicsForSemesterSync(semesterId: Int): List<Topic> = studyDao.getAllTopicsForSemesterSync(semesterId)
     val recentTopics: Flow<List<Topic>> = studyDao.getRecentTopics()
     suspend fun insertTopic(topic: Topic): Long = studyDao.insertTopic(topic)
     suspend fun insertTopics(topics: List<Topic>) = studyDao.insertTopics(topics)

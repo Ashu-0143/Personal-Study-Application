@@ -123,7 +123,7 @@ fun RecallSessionScreen(viewModel: StudyViewModel) {
 
         if (!isSessionComplete) {
             val progressVal = (currentIndex + 1).toFloat() / questions.size
-            val activeQuestion = questions[currentIndex]
+            val activeQuestion = questions.getOrElse(currentIndex) { questions.last() }
 
             // Progress Indicators
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.db.Semester
 import com.example.data.db.Subject
 import com.example.data.db.Topic
@@ -336,6 +337,75 @@ fun Sidebar(
             Icon(Icons.Default.AddCircleOutline, contentDescription = null, tint = PrimaryTeal, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(12.dp))
             Text("Provision New Environment", style = MaterialTheme.typography.bodyMedium, color = OnSurfaceText)
+        }
+
+        // --- Performance Tuning Engine (User request: button for best performance like those who use higher Memory) ---
+        val highMemoryMode by viewModel.highMemoryMode.collectAsState()
+
+        Spacer(modifier = Modifier.height(12.dp))
+        HorizontalDivider(color = OnSurfaceDarker.copy(alpha = 0.5f), thickness = 1.dp)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (highMemoryMode) PrimaryTeal.copy(alpha = 0.08f) else OnSurfaceDarker.copy(alpha = 0.15f))
+                .border(
+                    width = 1.dp,
+                    color = if (highMemoryMode) PrimaryTeal.copy(alpha = 0.35f) else Color.Transparent,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                .clickable { viewModel.toggleHighMemoryMode() }
+                .padding(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        tint = if (highMemoryMode) PrimaryTeal else OnSurfaceMuted,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (highMemoryMode) "High RAM Mode" else "Low RAM (2GB) Mode",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = if (highMemoryMode) PrimaryTeal else OnSurfaceText
+                    )
+                }
+                
+                Switch(
+                    checked = highMemoryMode,
+                    onCheckedChange = { viewModel.toggleHighMemoryMode() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = SurfaceDark,
+                        checkedTrackColor = PrimaryTeal,
+                        uncheckedThumbColor = OnSurfaceMuted,
+                        uncheckedTrackColor = OnSurfaceDarker
+                    ),
+                    modifier = Modifier.height(24.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = if (highMemoryMode) {
+                    "Optimized for high-performance systems. Activates full academic context, fast preloading, and a dynamic 100-entry memory cache."
+                } else {
+                    "Optimized for 2GB low-resource devices. Activates aggressive response compression and a highly conservative JVM heap cache."
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = OnSurfaceMuted,
+                lineHeight = 12.sp
+            )
         }
     }
 }
